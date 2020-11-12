@@ -435,7 +435,7 @@ void MainWindow::onFileSave(QWidget* window)
             int dPos = fileName.lastIndexOf(".") + 1;
             Q_ASSERT_X(dPos != 0, "MainWindow::fileSave()", "File with empty extension!");
             QString ext = fileName.mid(dPos);
-            saveWindow(childWindow, fileName, ext);
+            saveWindow(childWindow, fileName, "scs");
         }else
             onFileSaveAs(childWindow->widget());
     }
@@ -460,6 +460,7 @@ void MainWindow::onFileSaveAs(QWidget* window)
 
     QString selectedFilter;
     QString fileName = mLastDir.path() + "/" + childWindow->currentFileName();
+    fileName.replace(fileName.lastIndexOf('.') + 1, 3, "scs");
     mBlurEffect->setEnabled(true);
     fileName = QFileDialog::getSaveFileName(this,
                                             tr("Save file to .."),
@@ -480,7 +481,6 @@ void MainWindow::onFileSaveAs(QWidget* window)
     }
 
     mBlurEffect->setEnabled(false);
-
 }
 
 void MainWindow::onFileSaveAll()

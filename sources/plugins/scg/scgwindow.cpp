@@ -44,6 +44,9 @@
 #include "config.h"
 #include "scgundoview.h"
 
+#include <editor/scgfileloader.h>
+#include <editor/scgfilewriter.h>
+
 
 const QString SCgWindow::SupportedPasteMimeType = "text/KBE-gwf";
 
@@ -316,21 +319,32 @@ QIcon SCgWindow::icon() const
 
 bool SCgWindow::loadFromFile(const QString &fileName)
 {
-    GWFFileLoader loader;
-
-    if (loader.load(fileName, mView->scene()))
-    {
-        mFileName = fileName;
-        setWindowTitle(mFileName);
-        emitEvent(EditorObserverInterface::ContentLoaded);
-        return true;
-    }else
+    if (fileName.endsWith(".scs")) {
+        SCgFileLoader loader;
+        if (loader.load(fileName, mView->scene()))
+        {
+            mFileName = fileName;
+            setWindowTitle(mFileName);
+            emitEvent(EditorObserverInterface::ContentLoaded);
+            return true;
+        }
         return false;
+    } else {
+        GWFFileLoader loader;
+        if (loader.load(fileName, mView->scene()))
+        {
+            mFileName = fileName;
+            setWindowTitle(mFileName);
+            emitEvent(EditorObserverInterface::ContentLoaded);
+            return true;
+        }
+        return false;
+    }
 }
 
 bool SCgWindow::saveToFile(const QString &fileName)
 {
-    GWFFileWriter writer;
+    SCgFileWriter writer;
 
     if (writer.save(fileName, mView->scene()))
     {
@@ -642,7 +656,7 @@ bool SCgWindow::isSaved() const
 QStringList SCgWindow::supportedFormatsExt() const
 {
     QStringList res;
-    res << "gwf";
+    res.append("scs");
     return res;
 }
 
@@ -699,7 +713,8 @@ EditorInterface* SCgWindowFactory::createInstance()
 QStringList SCgWindowFactory::supportedFormatsExt()
 {
     QStringList res;
-    res << "gwf";
+    res.append("gwf");
+    res.append("scs");
     return res;
 }
 

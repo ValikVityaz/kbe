@@ -5,8 +5,6 @@
  */
 #include "scs_types.hpp"
 
-#include "sc-memory/sc_debug.hpp"
-
 namespace scs
 {
 
@@ -106,7 +104,7 @@ bool TypeResolver::IsConnectorReversed(std::string const & connectorAlias)
 
 bool TypeResolver::IsConst(std::string const & idtf)
 {
-  SC_ASSERT(!idtf.empty(), ());
+  //SC_ASSERT(!idtf.empty(), ());
 
   size_t const n = idtf.size() - 1;
   size_t i = 0;

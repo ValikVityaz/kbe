@@ -2,8 +2,6 @@
 #include "scsLexer.h"
 #include "scs_parser.hpp"
 
-//#include "sc-memory/sc_debug.hpp"
-
 #define APPEND_ATTRS(__attrs, __edge) \
 for (auto const & _a : __attrs) \
 { \
@@ -22,7 +20,7 @@ for (auto const & _a : __attrs) \
 #pragma once
 
 
-#include "../runtime/src/antlr4-runtime.h"
+#include "antlr4-runtime.h"
 
 
 namespace scs {
@@ -47,13 +45,13 @@ public:
   };
 
   enum {
-    RuleContent = 0, RuleContour = 1, RuleConnector = 2, RuleSyntax = 3, 
-    RuleSentence_wrap = 4, RuleSentence = 5, RuleAlias = 6, RuleIdtf_system = 7, 
-    RuleSentence_assign = 8, RuleIdtf_lvl1_preffix = 9, RuleIdtf_lvl1_value = 10, 
-    RuleIdtf_lvl1 = 11, RuleIdtf_edge = 12, RuleIdtf_set = 13, RuleIdtf_common = 14, 
-    RuleIdtf_list = 15, RuleInternal_sentence = 16, RuleInternal_sentence_list = 17, 
-    RuleSentence_lvl1 = 18, RuleSentence_lvl_4_list_item = 19, RuleSentence_lvl_common = 20, 
-    RuleAttr_list = 21
+    RuleContent = 0, RuleContour = 1, RuleContourWithJoin = 2, RuleConnector = 3, 
+    RuleSyntax = 4, RuleSentence_wrap = 5, RuleSentence = 6, RuleAlias = 7, 
+    RuleIdtf_system = 8, RuleSentence_assign = 9, RuleSentence_assign_contour = 10, 
+    RuleIdtf_lvl1_preffix = 11, RuleIdtf_lvl1_value = 12, RuleIdtf_lvl1 = 13, 
+    RuleIdtf_edge = 14, RuleIdtf_set = 15, RuleIdtf_common = 16, RuleIdtf_list = 17, 
+    RuleInternal_sentence = 18, RuleInternal_sentence_list = 19, RuleSentence_lvl1 = 20, 
+    RuleSentence_lvl_4_list_item = 21, RuleSentence_lvl_common = 22, RuleAttr_list = 23
   };
 
   scsParser(antlr4::TokenStream *input);
@@ -83,6 +81,7 @@ public:
 
   class ContentContext;
   class ContourContext;
+  class ContourWithJoinContext;
   class ConnectorContext;
   class SyntaxContext;
   class Sentence_wrapContext;
@@ -90,6 +89,7 @@ public:
   class AliasContext;
   class Idtf_systemContext;
   class Sentence_assignContext;
+  class Sentence_assign_contourContext;
   class Idtf_lvl1_preffixContext;
   class Idtf_lvl1_valueContext;
   class Idtf_lvl1Context;
@@ -134,6 +134,22 @@ public:
 
   ContourContext* contour();
 
+  class  ContourWithJoinContext : public antlr4::ParserRuleContext {
+  public:
+    ElementHandle handle;
+    int count = 0;;
+    ContourWithJoinContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *CONTOUR_BEGIN();
+    antlr4::tree::TerminalNode *CONTOUR_END();
+    std::vector<Sentence_wrapContext *> sentence_wrap();
+    Sentence_wrapContext* sentence_wrap(size_t i);
+
+   
+  };
+
+  ContourWithJoinContext* contourWithJoin();
+
   class  ConnectorContext : public antlr4::ParserRuleContext {
   public:
     std::string text;
@@ -176,6 +192,7 @@ public:
     virtual size_t getRuleIndex() const override;
     Sentence_lvl1Context *sentence_lvl1();
     Sentence_assignContext *sentence_assign();
+    Sentence_assign_contourContext *sentence_assign_contour();
     Sentence_lvl_commonContext *sentence_lvl_common();
 
    
@@ -223,6 +240,20 @@ public:
 
   Sentence_assignContext* sentence_assign();
 
+  class  Sentence_assign_contourContext : public antlr4::ParserRuleContext {
+  public:
+    scsParser::Idtf_commonContext *a = nullptr;;
+    scsParser::ContourWithJoinContext *i = nullptr;;
+    Sentence_assign_contourContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    Idtf_commonContext *idtf_common();
+    ContourWithJoinContext *contourWithJoin();
+
+   
+  };
+
+  Sentence_assign_contourContext* sentence_assign_contour();
+
   class  Idtf_lvl1_preffixContext : public antlr4::ParserRuleContext {
   public:
     std::string text;
@@ -266,14 +297,14 @@ public:
   class  Idtf_edgeContext : public antlr4::ParserRuleContext {
   public:
     ElementHandle handle;
-    scsParser::Idtf_systemContext *src = nullptr;;
+    scsParser::Idtf_commonContext *src = nullptr;;
     scsParser::ConnectorContext *c = nullptr;;
     scsParser::Attr_listContext *attrs = nullptr;;
-    scsParser::Idtf_systemContext *trg = nullptr;;
+    scsParser::Idtf_commonContext *trg = nullptr;;
     Idtf_edgeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    std::vector<Idtf_systemContext *> idtf_system();
-    Idtf_systemContext* idtf_system(size_t i);
+    std::vector<Idtf_commonContext *> idtf_common();
+    Idtf_commonContext* idtf_common(size_t i);
     ConnectorContext *connector();
     Attr_listContext *attr_list();
 
@@ -293,6 +324,8 @@ public:
     virtual size_t getRuleIndex() const override;
     std::vector<Idtf_commonContext *> idtf_common();
     Idtf_commonContext* idtf_common(size_t i);
+    std::vector<Internal_sentence_listContext *> internal_sentence_list();
+    Internal_sentence_listContext* internal_sentence_list(size_t i);
     std::vector<Attr_listContext *> attr_list();
     Attr_listContext* attr_list(size_t i);
 
@@ -355,6 +388,7 @@ public:
     ConnectorContext *connector();
     Idtf_listContext *idtf_list();
     Attr_listContext *attr_list();
+    Internal_sentence_listContext *internal_sentence_list();
 
    
   };
@@ -442,6 +476,7 @@ public:
 
   virtual bool sempred(antlr4::RuleContext *_localctx, size_t ruleIndex, size_t predicateIndex) override;
   bool contourSempred(ContourContext *_localctx, size_t predicateIndex);
+  bool contourWithJoinSempred(ContourWithJoinContext *_localctx, size_t predicateIndex);
 
 private:
   static std::vector<antlr4::dfa::DFA> _decisionToDFA;

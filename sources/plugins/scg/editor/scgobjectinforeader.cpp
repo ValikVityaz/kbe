@@ -10,6 +10,7 @@
 #include <QTextStream>
 #include <memory>
 #include <QDebug>
+#include <QMap>
 
 #include "scgobjectsinfo.h"
 #include "scgnode.h"
@@ -23,13 +24,11 @@ SCgObjectInfoReader::SCgObjectInfoReader(bool isOwner) :
     mIsOwner(isOwner),
     mVersion(qMakePair(0, 0))
 {
-    helper = SCgEditorHelper();
 }
 
-SCgObjectInfoReader::SCgObjectInfoReader(QIODevice *dev, QIODevice *layoutdev, bool isOwner):
+SCgObjectInfoReader::SCgObjectInfoReader(QIODevice *dev, QIODevice *layoutdev, bool isOwner) :
                                                         mIsOwner(isOwner)
 {
-    helper = SCgEditorHelper();
     read(dev, layoutdev);
 }
 
@@ -53,13 +52,6 @@ void SCgObjectInfoReader::del()
     mObjectsInfo.clear();
 }
 
-double convertCoor(QString str) {
-    if (str.startsWith("neg_")) {
-        str = "-" + str.remove(0, 4);
-    }
-    return str.toDouble();
-}
-
 bool SCgObjectInfoReader::read(QIODevice *dev, QIODevice *layoutDev)
 {
     if (mIsOwner)
@@ -68,19 +60,12 @@ bool SCgObjectInfoReader::read(QIODevice *dev, QIODevice *layoutDev)
     scgStream.setDevice(layoutDev);
     scsStream.setDevice(dev);
 
-    /*QString line = stream.readLine();
-    if (line != SCgEditorHelper::SCG_COMMENT)
-    {
-        mLastError = QString("Given document has unsupported format.");
-        return false;
-    }*/
-    scs::Parser parser;
-    parser.Parse(scsStream.readAll().toStdString().append(scgStream.readAll().toStdString()));
-    scs::Parser::AliasHandles aliases = parser.GetAliases();
-    for (auto const & it : aliases) {
+    parser.Parse(scsStream.readAll().append(scgStream.readAll()).toStdString());
+
+    for (auto const & it : parser.GetAliases()) {
         qDebug() << "-----";
         qDebug() << QString::fromStdString(it.first) << " " << (*it.second) << " " << parser.GetParsedElement(it.second).GetType();
-        alias.insert(it.second, QString::fromStdString(it.first));
+        aliases.insert(it.second, QString::fromStdString(it.first));
     }
 
     scs::Parser::TripleVector triples = parser.GetParsedTriples();
@@ -96,311 +81,294 @@ bool SCgObjectInfoReader::read(QIODevice *dev, QIODevice *layoutDev)
 
         if (src.GetIdtf() == "concept_scg_contour") contours.insert(*t.m_target, t.m_target);
 
-        helper.addEdge(t.m_edge, t.m_source, t.m_target);
+        addEdge(t.m_edge, t.m_source, t.m_target);
     }
     for (auto const & contour : contours.keys()) {
-        auto set = helper.findRelByIdtf(contours[contour], "nrel_including", parser);
-        for (auto member : helper.getOut(set)) {
-            parent[member.second] = contours[contour];
+        auto set = findRelValByIdtf(contours[contour], "nrel_including");
+        for (auto member : getOut(set)) {
+            parents[member.second] = contours[contour];
         }
     }
     for (auto const & t : triples) {
-        qDebug() << "???";
-        auto const & src = parser.GetParsedElement(t.m_source);
-        auto const & trg = parser.GetParsedElement(t.m_target);
-        if (src.GetIdtf() == "nrel_scg_editor_representation") {
-            auto pair = helper.getEdge(t.m_target);
-            scs::ParsedElement f = parser.GetParsedElement(pair.first);
-            scs::ParsedElement s = parser.GetParsedElement(pair.second);
-            if (f.GetType().IsNode()) {
-                std::unique_ptr<SCgNodeInfo> nodeInfo(new SCgNodeInfo());
-                QMap<QString, QString> values;
+        auto const & srcIdtf = parser.GetParsedElement(t.m_source).GetIdtf();
+        if (srcIdtf == "nrel_scg_representation") {
+            auto pair = getEdge(t.m_target);
+            auto type = parser.GetParsedElement(pair.first).GetType();
 
-                for (auto outPair : helper.getOut(pair.second)) {
-                    auto inVec = helper.getIn(outPair.first);
-                    if (inVec.size() == 1) {
-                        auto rel = inVec[0].second;
-                        auto val = outPair.second;
-                        values.insert(QString::fromStdString(parser.GetParsedElement(rel).GetIdtf()),
-                                      QString::fromStdString(parser.GetParsedElement(val).GetIdtf()));
-                    }
-                }
-                nodeInfo->posRef() = QPointF(convertCoor(values["nrel_x"]), convertCoor(values["nrel_y"]));
-                nodeInfo->idtfPosRef() = values["nrel_idtf_pos"].toDouble();
-                if (f.GetIdtf()[0] == '.') {
-                    nodeInfo->idtfValueRef() = "";
-                } else {
-                    nodeInfo->idtfValueRef() = QString::fromStdString(f.GetIdtf());
-                }
-                nodeInfo->idRef() = helper.getId(QString::fromStdString(s.GetIdtf()));
-                
-                if (parent.find(pair.second) != parent.end()) {
-                    QString idtf = QString::fromStdString(parser.GetParsedElement(parent[pair.second]).GetIdtf());
-                    nodeInfo->parentIdRef() = helper.getId(idtf);
-                } else {
-                    nodeInfo->parentIdRef() = "0";
-                }
-
-                nodeInfo->typeAliasRef() = types[f.GetType()];
-                nodeInfo->contentTypeRef() = 0;
-                nodeInfo->contentMimeTypeRef() = "";
-                nodeInfo->contentVisibleRef() = false;
-                nodeInfo->contentDataRef() = QVariant("");
-                mObjectsInfo[SCgNode::Type].append(nodeInfo.release());
-            } else if (f.GetType().IsEdge()) {
-                std::unique_ptr<SCgPairInfo> pairInfo(new SCgPairInfo());
-                QMap<QString, scs::ElementHandle> values;
-
-                for (auto outPair : helper.getOut(pair.second)) {
-                    auto inVec = helper.getIn(outPair.first);
-                    if (inVec.size() == 1) {
-                        auto rel = inVec[0].second;
-                        auto val = outPair.second;
-                        values.insert(QString::fromStdString(parser.GetParsedElement(rel).GetIdtf()), val);
-                    }
-                }
-
-                pairInfo->idtfValueRef() = "";
-                pairInfo->idRef() = helper.getId(QString::fromStdString(s.GetIdtf()));
-                pairInfo->beginDotRef() = (QString::fromStdString(parser.GetParsedElement(values["nrel_start_ratio"]).GetIdtf()).toDouble());
-                pairInfo->endDotRef() = (QString::fromStdString(parser.GetParsedElement(values["nrel_end_ratio"]).GetIdtf()).toDouble());
-
-                auto p = helper.getEdge(pair.second);
-                QString startIdtf = QString::fromStdString(parser.GetParsedElement(p.first).GetIdtf());
-                QString endIdtf = QString::fromStdString(parser.GetParsedElement(p.second).GetIdtf());
-                pairInfo->beginObjectIdRef() = helper.getId(startIdtf);
-                pairInfo->endObjectIdRef() = helper.getId(endIdtf);
-
-                pairInfo->typeAliasRef() = types[f.GetType()];
-                pairInfo->parentIdRef() = "0";
-
-                auto set = values["nrel_decomposition"];
-                scs::ElementHandle cur;
-                pairInfo->pointsRef().push_back(QPointF());
-                for (auto memberPair : helper.getOut(set)) {
-                    scs::ElementHandle prev = helper.findRelByIdtf(memberPair.second, "nrel_basic_sequence", parser);
-                    if (!prev.IsValid()) {
-                        cur = memberPair.second;
-                        break;
-                    }
-                }
-                while (true) {
-                    cur = helper.findRelByIdtf(cur, "nrel_basic_sequence", parser, false);
-                    if (!cur.IsValid()) break;
-                    auto next = helper.findRelByIdtf(cur, "nrel_basic_sequence", parser, false);
-                    if (!next.IsValid()) break;
-
-                    auto x = parser.GetParsedElement(helper.findRelByIdtf(cur, "nrel_x", parser)).GetIdtf();
-                    auto y = parser.GetParsedElement(helper.findRelByIdtf(cur, "nrel_y", parser)).GetIdtf();
-                    pairInfo->pointsRef().push_back(QPointF(convertCoor(QString::fromStdString(x)),
-                                                            convertCoor(QString::fromStdString(y))));
-                }
-                pairInfo->pointsRef().push_back(QPointF());
-
-                mObjectsInfo[SCgPair::Type].append(pairInfo.release());
+            if (type.IsNode() || type.IsLink()) {
+                parseNode(pair.first, pair.second);
+            } else if (type.IsEdge()) {
+                parsePair(pair.first, pair.second);
             }
-        } else if (src.GetIdtf() == "concept_scg_bus") {
-            std::unique_ptr<SCgBusInfo> busInfo(new SCgBusInfo());
-            QMap<QString, scs::ElementHandle> values;
-            QString idtf = QString::fromStdString(trg.GetIdtf());
-
-            for (auto outPair : helper.getOut(t.m_target)) {
-                auto inVec = helper.getIn(outPair.first);
-                if (inVec.size() == 1) {
-                    auto rel = inVec[0].second;
-                    auto val = outPair.second;
-                    values.insert(QString::fromStdString(parser.GetParsedElement(rel).GetIdtf()), val);
-                }
-            }
-
-            busInfo->idtfValueRef() = "";
-            busInfo->typeAliasRef() = "bus";
-            busInfo->idRef() = helper.getId(idtf);
-            auto ownerIdtf = parser.GetParsedElement(helper.findRelByIdtf(t.m_target, "nrel_adjacent", parser)).GetIdtf();
-            busInfo->ownerIdRef() = helper.getId(QString::fromStdString(ownerIdtf));
-
-            if (parent.find(t.m_target) != parent.end()) {
-                QString idtf = QString::fromStdString(parser.GetParsedElement(parent[t.m_target]).GetIdtf());
-                busInfo->parentIdRef() = helper.getId(idtf);
-            } else {
-                busInfo->parentIdRef() = "0";
-            }
-
-            auto set = values["nrel_decomposition"];
-            scs::ElementHandle cur;
-            busInfo->pointsRef().push_back(QPointF());
-            for (auto memberPair : helper.getOut(set)) {
-                scs::ElementHandle prev = helper.findRelByIdtf(memberPair.second, "nrel_basic_sequence", parser);
-                if (!prev.IsValid()) {
-                    cur = memberPair.second;
-                    break;
-                }
-            }
-            while (true) {
-                cur = helper.findRelByIdtf(cur, "nrel_basic_sequence", parser, false);
-                if (!cur.IsValid()) break;
-
-                auto x = parser.GetParsedElement(helper.findRelByIdtf(cur, "nrel_x", parser)).GetIdtf();
-                auto y = parser.GetParsedElement(helper.findRelByIdtf(cur, "nrel_y", parser)).GetIdtf();
-                busInfo->pointsRef().push_back(QPointF(convertCoor(QString::fromStdString(x)),
-                                                        convertCoor(QString::fromStdString(y))));
-            }
-
-            mObjectsInfo[SCgBus::Type].append(busInfo.release());
-        } else if (src.GetIdtf() == "concept_scg_contour") {
-            std::unique_ptr<SCgContourInfo> contourInfo(new SCgContourInfo());
-            QMap<QString, scs::ElementHandle> values;
-            QString idtf = QString::fromStdString(trg.GetIdtf());
-
-            contourInfo->idRef() = helper.getId(idtf);
-            contourInfo->idtfValueRef() = "";
-
-            if (parent.find(t.m_target) != parent.end()) {
-                QString idtf = QString::fromStdString(parser.GetParsedElement(parent[t.m_target]).GetIdtf());
-                contourInfo->parentIdRef() = helper.getId(idtf);
-            } else {
-                contourInfo->parentIdRef() = "0";
-            }
-
-            for (auto outPair : helper.getOut(t.m_target)) {
-                auto inVec = helper.getIn(outPair.first);
-                if (inVec.size() == 1) {
-                    auto rel = inVec[0].second;
-                    auto val = outPair.second;
-                    values.insert(QString::fromStdString(parser.GetParsedElement(rel).GetIdtf()), val);
-                }
-            }
-
-            auto set = values["nrel_decomposition"];
-            scs::ElementHandle start = helper.getOut(set)[0].second;
-            scs::ElementHandle cur = start;
-            auto x = parser.GetParsedElement(helper.findRelByIdtf(cur, "nrel_x", parser)).GetIdtf();
-            auto y = parser.GetParsedElement(helper.findRelByIdtf(cur, "nrel_y", parser)).GetIdtf();
-            contourInfo->pointsRef().push_back(QPointF(convertCoor(QString::fromStdString(x)),
-                                                    convertCoor(QString::fromStdString(y))));
-            while (true) {
-                cur = helper.findRelByIdtf(cur, "nrel_basic_sequence", parser, false);
-                if (cur == start) break;
-
-                auto x = parser.GetParsedElement(helper.findRelByIdtf(cur, "nrel_x", parser)).GetIdtf();
-                auto y = parser.GetParsedElement(helper.findRelByIdtf(cur, "nrel_y", parser)).GetIdtf();
-                contourInfo->pointsRef().push_back(QPointF(convertCoor(QString::fromStdString(x)),
-                                                        convertCoor(QString::fromStdString(y))));
-            }
-
-            mObjectsInfo[SCgContour::Type].append(contourInfo.release());
+        } else if (srcIdtf == "concept_scg_bus") {
+            parseBus(t.m_target);
+        } else if (srcIdtf == "concept_scg_contour") {
+            parseContour(t.m_target);
         }
     }
-    QString line;
-
-
     return true;
 }
 
-bool SCgObjectInfoReader::getAttributeString(const QDomElement &element, QString attribute, QString &result)
+void SCgObjectInfoReader::parseNode(const scs::ElementHandle &node, const scs::ElementHandle &scgNode)
 {
-    if (element.hasAttribute(attribute))
-    {
-        result = element.attribute(attribute);
-        return true;
+    ScType type = parser.GetParsedElement(node).GetType();
+    QString idtf = QString::fromStdString(parser.GetParsedElement(node).GetIdtf());
+    QString scgIdtf = QString::fromStdString(parser.GetParsedElement(scgNode).GetIdtf());
+    auto values = getRelValues(scgNode);
+
+    std::unique_ptr<SCgNodeInfo> nodeInfo(new SCgNodeInfo());
+
+    nodeInfo->posRef() = QPointF(values["nrel_x"].toDouble(), values["nrel_y"].toDouble());
+    nodeInfo->idtfPosRef() = values["nrel_idtf_pos"].toDouble();
+    if (idtf.startsWith('.')) {
+        nodeInfo->idtfValueRef() = "";
+    } else {
+        nodeInfo->idtfValueRef() = idtf;
     }
+    nodeInfo->idRef() = getId(scgIdtf);
+    nodeInfo->parentIdRef() = getParentId(scgNode);
+    nodeInfo->typeAliasRef() = convertType(type);
 
-    errorHaventAttribute(element.tagName(), attribute);
-    return false;
-}
-
-bool SCgObjectInfoReader::getAttributeBool(const QDomElement &element, QString attribute, bool &result)
-{
-    QString strResult;
-    if (!getAttributeString(element, attribute, strResult))
-        return false;
-    else
-        if (strResult == "false")
-            result = false;
-        else if (strResult == "true")
-            result = true;
-        else
-        {
-            errorBoolParse(element.tagName(), attribute);
-            return false;
+    if (type.IsNode()) {
+        nodeInfo->contentTypeRef() = 0;
+        nodeInfo->contentMimeTypeRef() = "";
+        nodeInfo->contentVisibleRef() = false;
+        nodeInfo->contentDataRef() = QVariant("");
+    } else {
+        nodeInfo->contentTypeRef() = values["nrel_content_type"].toInt();
+        nodeInfo->contentMimeTypeRef() = values["nrel_content_mime_type"].replace('_','/');
+        nodeInfo->contentVisibleRef() = values["nrel_content_visible"].toInt();
+        nodeInfo->contentFilenameRef() = values["nrel_content_filename"];
+        QString content = QString::fromStdString(parser.GetParsedElement(node).GetValue());
+        if (nodeInfo->contentType() == 4) {
+            QByteArray arr = QByteArray::fromBase64(content.toLocal8Bit());
+            nodeInfo->contentDataRef() = QVariant(arr);
+        } else {
+            nodeInfo->contentDataRef() = QVariant(content);
         }
-    return true;
-}
-
-bool SCgObjectInfoReader::getAttributeDouble(const QDomElement &element, QString attribute, double &result)
-{
-    if (element.hasAttribute(attribute))
-    {
-        bool res;
-        result = element.attribute(attribute).toDouble(&res);
-
-        if (!res) return false;
-
-        return true;
     }
 
-    errorHaventAttribute(element.tagName(), attribute);
-    return false;
+    mObjectsInfo[SCgNode::Type].append(nodeInfo.release());
 }
 
-bool SCgObjectInfoReader::getAttributeInt(const QDomElement &element, QString attribute, int &result)
+void SCgObjectInfoReader::parsePair(const scs::ElementHandle &pair, const scs::ElementHandle &scgPair)
 {
-    if (element.hasAttribute(attribute))
-    {
-        bool res;
-        result = element.attribute(attribute).toInt(&res);
+    ScType type = parser.GetParsedElement(pair).GetType();
+    QString scgIdtf = QString::fromStdString(parser.GetParsedElement(scgPair).GetIdtf());
+    auto values = getRelValues(scgPair);
 
-        if (!res) return false;
+    std::unique_ptr<SCgPairInfo> pairInfo(new SCgPairInfo());
 
-        return true;
+    pairInfo->idtfValueRef() = "";
+    pairInfo->idRef() = getId(scgIdtf);
+    pairInfo->beginDotRef() = values["nrel_start_ratio"].toDouble();
+    pairInfo->endDotRef() = values["nrel_end_ratio"].toDouble();
+
+    auto p = getEdge(scgPair);
+    QString startIdtf = QString::fromStdString(parser.GetParsedElement(p.first).GetIdtf());
+    QString endIdtf = QString::fromStdString(parser.GetParsedElement(p.second).GetIdtf());
+    pairInfo->beginObjectIdRef() = getId(startIdtf);
+    pairInfo->endObjectIdRef() = getId(endIdtf);
+
+    pairInfo->typeAliasRef() = convertType(type);
+    pairInfo->parentIdRef() = getParentId(scgPair);
+
+    auto set = findRelValByIdtf(scgPair, "nrel_decomposition");
+    pairInfo->pointsRef().push_back(QPointF());
+    pairInfo->pointsRef().append(getPoints(set));
+    pairInfo->pointsRef().push_back(QPointF());
+
+    mObjectsInfo[SCgPair::Type].append(pairInfo.release());
+}
+
+void SCgObjectInfoReader::parseBus(const scs::ElementHandle &bus)
+{
+    std::unique_ptr<SCgBusInfo> busInfo(new SCgBusInfo());
+    QString idtf = QString::fromStdString(parser.GetParsedElement(bus).GetIdtf());
+
+    auto values = getRelValues(bus);
+
+    busInfo->idtfValueRef() = "";
+    busInfo->typeAliasRef() = "bus";
+    busInfo->idRef() = getId(idtf);
+    auto ownerIdtf = parser.GetParsedElement(findRelValByIdtf(bus, "nrel_owner")).GetIdtf();
+    busInfo->ownerIdRef() = getId(QString::fromStdString(ownerIdtf));
+    busInfo->parentIdRef() = getParentId(bus);
+
+    auto set = findRelValByIdtf(bus, "nrel_decomposition");
+    busInfo->pointsRef().push_back(QPointF());
+    busInfo->pointsRef().append(getPoints(set));
+
+    mObjectsInfo[SCgBus::Type].append(busInfo.release());
+}
+
+void SCgObjectInfoReader::parseContour(const scs::ElementHandle &contour)
+{
+    std::unique_ptr<SCgContourInfo> contourInfo(new SCgContourInfo());
+    QString idtf = QString::fromStdString(parser.GetParsedElement(contour).GetIdtf());
+
+    auto values = getRelValues(contour);
+
+    contourInfo->idRef() = getId(idtf);
+    contourInfo->idtfValueRef() = "";
+    contourInfo->parentIdRef() = getParentId(contour);
+
+    auto set = findRelValByIdtf(contour, "nrel_decomposition");
+    contourInfo->pointsRef().append(getPoints(set));
+
+    mObjectsInfo[SCgContour::Type].append(contourInfo.release());
+}
+
+QVector<QPointF> SCgObjectInfoReader::getPoints(const scs::ElementHandle &set)
+{
+    QVector<QPointF> points;
+    auto pairs = getOut(set);
+    if (pairs.isEmpty()) return points;
+
+    scs::ElementHandle start = getOut(set)[0].second;
+    scs::ElementHandle cur = start;
+    while (true) {
+        if (!cur.IsValid()) break;
+        auto x = parser.GetParsedElement(findRelValByIdtf(cur, "nrel_x")).GetValue();
+        auto y = parser.GetParsedElement(findRelValByIdtf(cur, "nrel_y")).GetValue();
+        points.push_back(QPointF(QString::fromStdString(x).toDouble(),
+                                                QString::fromStdString(y).toDouble()));
+        cur = findRelValByIdtf(cur, "nrel_basic_sequence", false);
+        if (cur == start) return points;
     }
-    errorHaventAttribute(element.tagName(), attribute);
-    return false;
-}
-
-bool SCgObjectInfoReader::getElementPoints(const QDomElement &element, QVector<QPointF> &result)
-{
-    QDomElement points = element.firstChildElement("points");
-    if (points.isNull())
-    {
-        mLastError = QObject::tr("There are no points data for element '%1'").arg(element.tagName());
-        return false;
+    cur = start;
+    while (true) {
+        cur = findRelValByIdtf(cur, "nrel_basic_sequence");
+        if (!cur.IsValid()) break;
+        auto x = parser.GetParsedElement(findRelValByIdtf(cur, "nrel_x")).GetValue();
+        auto y = parser.GetParsedElement(findRelValByIdtf(cur, "nrel_y")).GetValue();
+        points.push_front(QPointF(QString::fromStdString(x).toDouble(),
+                                                QString::fromStdString(y).toDouble()));
     }
+    return points;
+}
 
-    QDomElement point = points.firstChildElement("point");
-    while (!point.isNull())
-    {
-        double x, y;
-        if (!getAttributeDouble(point, "x", x) || !getAttributeDouble(point, "y", y))
-            return false;
-        result.push_back(QPointF(x, y));
-        point = point.nextSiblingElement("point");
+QString SCgObjectInfoReader::convertType(ScType type)
+{
+    static const QMap<ScType, QString> myTypes = {
+        { ScType::EdgeUCommonConst, "pair/const/-/perm/noorien" },
+        { ScType::EdgeDCommonConst, "pair/const/-/perm/orient" },
+        { ScType::EdgeAccessConstFuzPerm, "pair/const/fuz/perm/orient/membership" },
+        { ScType::EdgeAccessConstNegPerm, "pair/const/neg/perm/orient/membership" },
+        { ScType::EdgeAccessConstPosPerm, "pair/const/pos/perm/orient/membership" },
+        { ScType::EdgeAccessConstFuzTemp, "pair/const/fuz/temp/orient/membership" },
+        { ScType::EdgeAccessConstNegTemp, "pair/const/neg/temp/orient/membership" },
+        { ScType::EdgeAccessConstPosTemp, "pair/const/pos/temp/orient/membership" },
+
+        { ScType::EdgeUCommonVar, "pair/var/-/perm/noorien" },
+        { ScType::EdgeDCommonVar, "pair/var/-/perm/orient" },
+        { ScType::EdgeAccessVarFuzPerm, "pair/var/fuz/perm/orient/membership" },
+        { ScType::EdgeAccessVarNegPerm, "pair/var/neg/perm/orient/membership" },
+        { ScType::EdgeAccessVarPosPerm, "pair/var/pos/perm/orient/membership" },
+        { ScType::EdgeAccessVarFuzTemp, "pair/var/fuz/temp/orient/membership" },
+        { ScType::EdgeAccessVarNegTemp, "pair/var/neg/temp/orient/membership" },
+        { ScType::EdgeAccessVarPosTemp, "pair/var/pos/temp/orient/membership" },
+
+        { ScType::EdgeDCommon, "pair/-/-/-/orient" },
+        { ScType::EdgeUCommon, "pair/-/-/-/noorient" },
+
+        { ScType::LinkConst, "node/const/perm/general" },
+        { ScType::NodeConst, "node/const/perm/general" },
+        { ScType::NodeConstMaterial, "node/const/perm/general" },
+        { ScType::NodeConstAbstract, "node/const/perm/terminal" },
+        { ScType::NodeConstStruct, "node/const/perm/struct" },
+        { ScType::NodeConstTuple, "node/const/perm/tuple" },
+        { ScType::NodeConstRole, "node/const/perm/role" },
+        { ScType::NodeConstNoRole, "node/const/perm/relation" },
+        { ScType::NodeConstClass, "node/const/perm/group" },
+
+        { ScType::LinkVar, "node/var/perm/general" },
+        { ScType::NodeVar, "node/var/perm/general" },
+        { ScType::NodeVarAbstract, "node/var/perm/terminal" },
+        { ScType::NodeVarStruct, "node/var/perm/struct" },
+        { ScType::NodeVarTuple, "node/var/perm/tuple" },
+        { ScType::NodeVarRole, "node/var/perm/role" },
+        { ScType::NodeVarNoRole, "node/var/perm/relation" },
+        { ScType::NodeVarClass, "node/var/perm/group" },
+    };
+
+    return myTypes[type];
+}
+
+void SCgObjectInfoReader::addEdge(const scs::ElementHandle &edge, const scs::ElementHandle &src, const scs::ElementHandle &trg)
+{
+    edges.insert(edge, qMakePair(src, trg));
+
+    if (outEdges.find(src) == outEdges.end()) {
+        outEdges.insert(src, QVector<QPair<scs::ElementHandle, scs::ElementHandle>>());
     }
+    outEdges[src].push_back(qMakePair(edge, trg));
 
-    return true;
+    if (inEdges.find(trg) == inEdges.end()) {
+        inEdges.insert(trg, QVector<QPair<scs::ElementHandle, scs::ElementHandle>>());
+    }
+    inEdges[trg].push_back(qMakePair(edge, src));
 }
 
-void SCgObjectInfoReader::errorHaventAttribute(QString element, QString attribute)
+QPair<scs::ElementHandle, scs::ElementHandle> SCgObjectInfoReader::getEdge(const scs::ElementHandle &elHandle)
 {
-    mLastError = QObject::tr("'%1' element haven't '%2' attribute").arg(element).arg(attribute);
+    return edges[elHandle];
 }
 
-void SCgObjectInfoReader::errorFloatParse(QString element, QString attribute)
+QVector<QPair<scs::ElementHandle, scs::ElementHandle>> SCgObjectInfoReader::getIn(const scs::ElementHandle &elHandle)
 {
-    mLastError = QObject::tr("invalid float value in attribute '%1' of element '%2'").arg(attribute).arg(element);
+    return inEdges[elHandle];
 }
 
-void SCgObjectInfoReader::errorBoolParse(QString element, QString attribute)
+QVector<QPair<scs::ElementHandle, scs::ElementHandle>> SCgObjectInfoReader::getOut(const scs::ElementHandle &elHandle)
 {
-    mLastError = QObject::tr("invalid bollean value in attribute '%1' of element '%2'").arg(attribute).arg(element);
+    return outEdges[elHandle];
 }
 
-void SCgObjectInfoReader::errorHaventContent(QString element)
+scs::ElementHandle SCgObjectInfoReader::findRelValByIdtf(const scs::ElementHandle &el, QString idtf, bool out)
 {
-    mLastError = QObject::tr("node element '%1' haven't content tag").arg(element);
+    auto edgePairs = (out ? getOut(el) : getIn(el));
+    for (auto pair : edgePairs) {
+        for (auto pair2 : getIn(pair.first)) {
+            auto rel = pair2.second;
+            if (QString::fromStdString(parser.GetParsedElement(rel).GetIdtf()) == idtf) return pair.second;
+        }
+    }
+    return scs::ElementHandle();
 }
 
-void SCgObjectInfoReader::errorUnknownElementType(QString element, QString type)
+QHash<QString, QString> SCgObjectInfoReader::getRelValues(const scs::ElementHandle &el)
 {
-    mLastError = QObject::tr("type '%1' is unknown for element '%2'").arg(type).arg(element);
+    QHash<QString, QString> values;
+    for (auto outPair : getOut(el)) {
+        auto inVec = getIn(outPair.first);
+        for (auto inPair : getIn(outPair.first)) {
+            scs::ParsedElement relNode = parser.GetParsedElement(inPair.second);
+            scs::ParsedElement relTarget = parser.GetParsedElement(outPair.second);
+            /*ScType type = relNode.GetType();
+            bool isRelation = ((type & ScType::NodeRole) == type) ||
+                    ((type & ScType::NodeNoRole) == type);*/
+            if (true) {
+                auto value = relTarget.GetType().IsLink() ? relTarget.GetValue() : relTarget.GetIdtf();
+                values.insert(QString::fromStdString(relNode.GetIdtf()),
+                              QString::fromStdString(value));
+            }
+        }
+    }
+    return values;
+}
+
+QString SCgObjectInfoReader::getId(QString idtf) {
+    static int cnt = 0;
+    if (ids.find(idtf) == ids.end()) ids[idtf] = ++cnt;
+    return QString::number(ids[idtf]);
+}
+
+QString SCgObjectInfoReader::getParentId(scs::ElementHandle const &el) {
+    if (parents.find(el) != parents.end()) {
+        QString idtf = QString::fromStdString(parser.GetParsedElement(parents[el]).GetIdtf());
+        return getId(idtf);
+    } else {
+        return "0";
+    }
 }

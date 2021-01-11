@@ -344,18 +344,34 @@ bool SCgWindow::loadFromFile(const QString &fileName)
 
 bool SCgWindow::saveToFile(const QString &fileName)
 {
-    SCgFileWriter writer;
+    if (fileName.endsWith(".scs")) {
+        SCgFileWriter writer;
 
-    if (writer.save(fileName, mView->scene()))
-    {
-        mFileName = fileName;
-        setWindowTitle(mFileName);
-        mUndoStack->setClean();
-        emitEvent(EditorObserverInterface::ContentSaved);
+        if (writer.save(fileName, mView->scene()))
+        {
+            mFileName = fileName;
+            setWindowTitle(mFileName);
+            mUndoStack->setClean();
+            emitEvent(EditorObserverInterface::ContentSaved);
 
-        return true;
-    }else
-        return false;
+            return true;
+        }else
+            return false;
+    } else {
+        GWFFileWriter writer;
+
+        if (writer.save(fileName, mView->scene()))
+        {
+            mFileName = fileName;
+            setWindowTitle(mFileName);
+            mUndoStack->setClean();
+            emitEvent(EditorObserverInterface::ContentSaved);
+
+            return true;
+        }else
+            return false;
+    }
+
 }
 
 void SCgWindow::_update()
@@ -656,6 +672,7 @@ bool SCgWindow::isSaved() const
 QStringList SCgWindow::supportedFormatsExt() const
 {
     QStringList res;
+    res.append("gwf");
     res.append("scs");
     return res;
 }

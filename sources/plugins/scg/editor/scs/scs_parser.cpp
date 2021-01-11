@@ -6,8 +6,6 @@
 
 #include "scs_parser.hpp"
 
-#include "sc-memory/sc_debug.hpp"
-
 #include <limits>
 
 #if SC_PLATFORM_WIN32
@@ -68,27 +66,27 @@ protected:
   void syntaxError(antlr4::Recognizer *, antlr4::Token *, size_t line,
                    size_t charPositionInLine, std::string const & msg, std::exception_ptr) override
   {
-    SC_THROW_EXCEPTION(utils::ExceptionParseError, "Parse error at line " << line << "," << charPositionInLine << ": " << msg);
+    //SC_THROW_EXCEPTION(utils::ExceptionParseError, "Parse error at line " << line << "," << charPositionInLine << ": " << msg);
   }
 
   void reportAmbiguity(antlr4::Parser *, antlr4::dfa::DFA const &, size_t, size_t, bool,
                        antlrcpp::BitSet const &, antlr4::atn::ATNConfigSet *) override
   {
-    SC_THROW_EXCEPTION(utils::ExceptionParseError, "reportAmbiguity");
+    //SC_THROW_EXCEPTION(utils::ExceptionParseError, "reportAmbiguity");
   }
 
 
   void reportAttemptingFullContext(antlr4::Parser *, antlr4::dfa::DFA const &, size_t, size_t,
                                    antlrcpp::BitSet const &, antlr4::atn::ATNConfigSet *) override
   {
-    SC_THROW_EXCEPTION(utils::ExceptionParseError, "reportAttemptingFullContext");
+    //SC_THROW_EXCEPTION(utils::ExceptionParseError, "reportAttemptingFullContext");
   }
 
 
   void reportContextSensitivity(antlr4::Parser *, antlr4::dfa::DFA const &, size_t, size_t,
                                 size_t, antlr4::atn::ATNConfigSet *) override
   {
-    SC_THROW_EXCEPTION(utils::ExceptionParseError, "reportContextSensitivity");
+    //SC_THROW_EXCEPTION(utils::ExceptionParseError, "reportContextSensitivity");
   }
 
 };
@@ -275,9 +273,9 @@ bool Parser::Parse(std::string const & str)
   {
     parser.syntax();
   }
-  catch (utils::ExceptionParseError const & e)
+  catch (std::exception const & e)
   {
-    m_lastError = e.Message();
+    //m_lastError = e.Message();
     result = false;
   }
 
@@ -293,8 +291,8 @@ ParsedElement & Parser::GetParsedElementRef(ElementHandle const & elID)
 
   if (*elID >= container.size())
   {
-    SC_THROW_EXCEPTION(utils::ExceptionItemNotFound,
-                       std::string("ElementId{") + std::to_string(*elID) + ", " + std::to_string(elID.IsLocal()) + "}");
+    //SC_THROW_EXCEPTION(utils::ExceptionItemNotFound,
+                       //std::string("ElementId{") + std::to_string(*elID) + ", " + std::to_string(elID.IsLocal()) + "}");
   }
 
   return container[*elID];
@@ -306,8 +304,8 @@ ParsedElement const & Parser::GetParsedElement(ElementHandle const & elID) const
 
   if (*elID >= container.size())
   {
-    SC_THROW_EXCEPTION(utils::ExceptionItemNotFound,
-                       std::string("ElementId{") + std::to_string(*elID) + ", " + std::to_string(elID.IsLocal()) + "}");
+    //SC_THROW_EXCEPTION(utils::ExceptionItemNotFound,
+                       //std::string("ElementId{") + std::to_string(*elID) + ", " + std::to_string(elID.IsLocal()) + "}");
   }
 
   return container[*elID];
@@ -431,8 +429,8 @@ void Parser::ProcessTriple(ElementHandle const & source, ElementHandle const & e
       }
       else
       {
-        SC_THROW_EXCEPTION(utils::ExceptionParseError,
-                           "Can't merge types for element " + targetEl.GetIdtf());
+        //SC_THROW_EXCEPTION(utils::ExceptionParseError,
+                           //"Can't merge types for element " + targetEl.GetIdtf());
       }
     }
     else
